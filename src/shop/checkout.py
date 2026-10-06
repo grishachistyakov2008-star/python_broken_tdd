@@ -28,31 +28,39 @@ def validate_order(
 
     seen_skus: set[str] = set()
     for position, order_line in enumerate(lines, start=1):
-        if any(key not in order_line for key in REQUIRED_LINE_KEYS):
-            return f"Line {position} is missing a required field."
-        sku = order_line["sku"]
-        if not sku:
-            return f"Line {position} has an empty SKU."
-        if sku in seen_skus:
-            return f"SKU {sku} appears more than once."
-        seen_skus.add(sku)
-
-        quantity = order_line["qty"]
-        if not _is_integer_text(quantity):
-            return f"Line {position} has an invalid quantity."
-        if int(quantity) <= 0:
-            return f"Line {position} quantity must be positive."
-
-        unit_price = order_line["unit_price_kopecks"]
-        if not _is_integer_text(unit_price):
-            return f"Line {position} has an invalid price."
-        if int(unit_price) < 0:
-            return f"Line {position} price cannot be negative."
+        line_error = _validate_line(order_line, position, seen_skus)
+        if line_error is not None:
+            return line_error
 
     if promo_code and promo_code not in PROMO_CODES:
         return "The promo code is not supported."
     if shipping_city and shipping_city not in SUPPORTED_CITIES:
         return "The shipping city is not supported."
+    return None
+
+
+def _validate_line(order_line: dict[str, str], position: int, seen_skus: set[str]) -> str | None:
+    """Return a validation error for one line, if it has one."""
+    if any(key not in order_line for key in REQUIRED_LINE_KEYS):
+        return f"Line {position} is missing a required field."
+    sku = order_line["sku"]
+    if not sku:
+        return f"Line {position} has an empty SKU."
+    if sku in seen_skus:
+        return f"SKU {sku} appears more than once."
+    seen_skus.add(sku)
+
+    quantity = order_line["qty"]
+    if not _is_integer_text(quantity):
+        return f"Line {position} has an invalid quantity."
+    if int(quantity) <= 0:
+        return f"Line {position} quantity must be positive."
+
+    unit_price = order_line["unit_price_kopecks"]
+    if not _is_integer_text(unit_price):
+        return f"Line {position} has an invalid price."
+    if int(unit_price) < 0:
+        return f"Line {position} price cannot be negative."
     return None
 
 
@@ -91,9 +99,7 @@ def calculate_order_total(
     discount_percent = min(max(tier_percent, promo_percent), MAX_DISCOUNT_PERCENT)
     discounted_subtotal = subtotal - percent_of(subtotal, discount_percent)
     shipping = (
-        SHIPPING_KOPEKS
-        if shipping_city and discounted_subtotal < FREE_DELIVERY_FROM_KOPEKS
-        else 0
+        SHIPPING_KOPEKS if shipping_city and discounted_subtotal < FREE_DELIVERY_FROM_KOPEKS else 0
     )
     base = discounted_subtotal + shipping
     return base + percent_of(base, VAT_PERCENT)
